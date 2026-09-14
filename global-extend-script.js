@@ -10,8 +10,15 @@
 const ENABLED_PROFILES = [];
 
 // 代理规则的逻辑目标。脚本会优先查找这个名称，并兼容大小写差异。
-// 当前报错配置中的实际名称是 "Proxy"，不是 "PROXY"。
+// 当前配置使用的代理组名称是 "Proxy"（大小写敏感）。
 const PROXY_GROUP = "Proxy";
+
+// 当订阅完全没有 proxy-groups，但有可用节点时，自动创建下面这两个默认组。
+// 已有 proxy-groups 的订阅不会被这段默认配置覆盖。
+const DEFAULT_AUTO_GROUP = "Auto";
+const DEFAULT_TEST_URL = "http://www.gstatic.com/generate_204";
+const DEFAULT_TEST_INTERVAL = 300;
+const DEFAULT_TEST_TOLERANCE = 50;
 
 // 每个规则集都会被添加到当前配置的 rule-providers，并按 PREPEND_RULES
 // 中的顺序插入 rules 最前面。
@@ -46,7 +53,7 @@ const REMOTE_RULESETS = [
     url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt",
     behavior: "domain",
     path: "./ruleset/google.yaml",
-    proxy: "PROXY",
+    proxy: "Proxy",
     interval: 86400,
   },
   {
@@ -54,7 +61,7 @@ const REMOTE_RULESETS = [
     url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt",
     behavior: "domain",
     path: "./ruleset/proxy.yaml",
-    proxy: "PROXY",
+    proxy: "Proxy",
     interval: 86400,
   },
   {
@@ -78,7 +85,7 @@ const REMOTE_RULESETS = [
     url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt",
     behavior: "domain",
     path: "./ruleset/gfw.yaml",
-    proxy: "PROXY",
+    proxy: "Proxy",
     interval: 86400,
   },
   {
@@ -86,7 +93,7 @@ const REMOTE_RULESETS = [
     url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt",
     behavior: "domain",
     path: "./ruleset/tld-not-cn.yaml",
-    proxy: "PROXY",
+    proxy: "Proxy",
     interval: 86400,
   },
   {
@@ -94,7 +101,7 @@ const REMOTE_RULESETS = [
     url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt",
     behavior: "ipcidr",
     path: "./ruleset/telegramcidr.yaml",
-    proxy: "PROXY",
+    proxy: "Proxy",
     interval: 86400,
   },
   {
@@ -132,15 +139,15 @@ const PREPEND_RULES = [
   "RULE-SET,reject,REJECT",
   "RULE-SET,icloud,DIRECT",
   "RULE-SET,apple,DIRECT",
-  "RULE-SET,google,PROXY",
-  "RULE-SET,proxy,PROXY",
+  "RULE-SET,google,Proxy",
+  "RULE-SET,proxy,Proxy",
   "RULE-SET,direct,DIRECT",
   "RULE-SET,lancidr,DIRECT",
   "RULE-SET,cncidr,DIRECT",
-  "RULE-SET,telegramcidr,PROXY",
+  "RULE-SET,telegramcidr,Proxy",
   "GEOIP,LAN,DIRECT",
   "GEOIP,CN,DIRECT",
-  "MATCH,PROXY",
+  "MATCH,Proxy",
 ];
 
 function isNonEmptyString(value) {
@@ -196,6 +203,115 @@ function resolveProxyTarget(target, proxyGroup) {
   return target;
 }
 
+function renameLegacyProxyGroup(config) {
+  var groups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
+  var hasPreferredGroup = groups.some(function (group) {
+    return group && group.name === PROXY_GROUP;
+  });
+
+  // 用户明确要求使用 Proxy；只有旧组名 PROXY 存在时才自动迁移，避免覆盖同名组。
+  if (hasPreferredGroup) {
+    return;
+  }
+
+  var legacyGroup = groups.filter(function (group) {
+    return group && group.name === "PROXY";
+  })[0];
+
+  if (!legacyGroup) {
+    return;
+  }
+
+  legacyGroup.name = PROXY_GROUP;
+
+  // 同步更新其他代理组中对旧组名的引用。
+  groups.forEach(function (group) {
+    if (group && Array.isArray(group.proxies)) {
+      group.proxies = group.proxies.map(function (name) {
+        return name === "PROXY" ? PROXY_GROUP : name;
+      });
+    }
+  });
+
+  // 同步更新订阅原有规则中的旧目标，避免改名后留下无效引用。
+  if (Array.isArray(config.rules)) {
+    config.rules = config.rules.map(function (rule) {
+      if (typeof rule !== "string") {
+        return rule;
+      }
+
+      var fields = rule.split(",");
+      var ruleType = (fields[0] || "").trim().toUpperCase();
+      var targetIndex = ruleType === "MATCH" ? 1 : 2;
+
+      if (fields.length > targetIndex && fields[targetIndex] === "PROXY") {
+        fields[targetIndex] = PROXY_GROUP;
+      }
+
+      return fields.join(",");
+    });
+  }
+}
+
+function getNodeNames(config) {
+  var proxies = Array.isArray(config.proxies) ? config.proxies : [];
+
+  return proxies.filter(function (proxy) {
+    return proxy && isNonEmptyString(proxy.name);
+  }).map(function (proxy) {
+    return proxy.name;
+  });
+}
+
+function getProxyProviderNames(config) {
+  var providers = config["proxy-providers"] || {};
+
+  return Object.keys(providers).filter(function (name) {
+    return isNonEmptyString(name);
+  });
+}
+
+function ensureDefaultProxyGroups(config) {
+  var groups = Array.isArray(config["proxy-groups"]) ? config["proxy-groups"] : [];
+
+  // 只在完全没有代理组时创建默认组，避免修改用户已有的分组结构。
+  if (groups.length > 0) {
+    return;
+  }
+
+  var nodeNames = getNodeNames(config);
+  var providerNames = getProxyProviderNames(config);
+
+  // 没有节点或代理提供者时无法组成测速组，交给 Clash 原配置处理。
+  if (nodeNames.length === 0 && providerNames.length === 0) {
+    return;
+  }
+
+  var autoGroup = {
+    name: DEFAULT_AUTO_GROUP,
+    type: "url-test",
+    url: DEFAULT_TEST_URL,
+    interval: DEFAULT_TEST_INTERVAL,
+    tolerance: DEFAULT_TEST_TOLERANCE,
+  };
+
+  // 订阅直接提供 proxies 时使用 proxies；使用 proxy-providers 时使用 use。
+  if (nodeNames.length > 0) {
+    autoGroup.proxies = nodeNames;
+  } else {
+    autoGroup.use = providerNames;
+  }
+
+  config["proxy-groups"] = [
+    {
+      name: PROXY_GROUP,
+      type: "select",
+      proxies: [DEFAULT_AUTO_GROUP, "DIRECT"],
+    },
+    autoGroup,
+  ];
+}
+
 function createProvider(source) {
   var provider = {
     type: "http",
@@ -224,9 +340,11 @@ function main(config, profileName) {
   }
 
   var providers = config["rule-providers"] || {};
-  var oldRules = Array.isArray(config.rules) ? config.rules : [];
   var injectedProviderMap = {};
   var providerProxyMap = {};
+  renameLegacyProxyGroup(config);
+  ensureDefaultProxyGroups(config);
+  var oldRules = Array.isArray(config.rules) ? config.rules : [];
   var proxyGroup = findProxyGroup(config);
 
   REMOTE_RULESETS.forEach(function (source) {

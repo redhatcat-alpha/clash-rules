@@ -1,0 +1,305 @@
+# Clash 默认配置参考（mihomo / Clash Meta）
+#
+# 这是基础配置参考，不包含节点详细信息。proxies 由订阅提供，使用时请保留订阅
+# 返回的 proxies 内容；不要用这里的空数组覆盖订阅节点。
+# 远程 rule-providers 和完整规则顺序见 rule-providers.yaml。
+#
+# 阅读方式：未注释字段是推荐默认值；以“可选”标注的字段按需启用。不同 Clash
+# 内核和客户端支持的字段可能不同，遇到配置验证错误时优先检查内核版本。
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 一、通用运行参数与入站端口
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 是否允许局域网设备访问 Clash 代理端口。
+# 可选值：true / false。false 更安全；只有需要给手机、平板或其他局域网设备
+# 共享代理时才改为 true，并配合 bind-address、访问网段和认证使用。
+allow-lan: false
+
+# 可选：监听地址。allow-lan 为 true 时可指定网卡，减少代理端口暴露范围。
+# 可填 "*" 或具体 IPv4 / IPv6 地址。
+# bind-address: "*"
+
+# 可选：局域网允许访问的来源网段。白名单与黑名单同时存在时，黑名单优先。
+# lan-allowed-ips:
+#   - 192.168.0.0/16
+#   - 10.0.0.0/8
+# lan-disallowed-ips:
+#   - 192.168.1.100/32
+
+# 可选：为 HTTP、SOCKS5 入站设置用户名密码。allow-lan 开启时建议配置。
+# authentication:
+#   - "username:strong-password"
+
+# 可选：免认证来源网段。仅对 authentication 生效，不应随意放开大网段。
+# skip-auth-prefixes:
+#   - 127.0.0.1/32
+#   - ::1/128
+
+# 混合端口：HTTP 和 SOCKS5 共用此端口，桌面系统通常只需要它。
+mixed-port: 7890
+
+# 可选的独立入站端口。不需要时保持注释，避免重复监听端口。
+# port: 7890       # 仅 HTTP / HTTPS
+# socks-port: 7891 # 仅 SOCKS5
+# redir-port: 7892 # Linux/macOS 重定向入站，需额外系统转发配置
+# tproxy-port: 7893 # Linux TProxy 入站，需额外策略路由配置
+
+# 运行模式：
+# - rule：按 rules 从上到下匹配，推荐日常使用；
+# - global：所有流量交给 GLOBAL 代理组；
+# - direct：所有流量直连。
+mode: rule
+
+# 日志等级：silent、error、warning、info、debug。
+# debug 会产生大量日志，排障结束后建议改回 info。
+log-level: info
+
+# 是否允许内核接收 IPv6 流量。它与 dns.ipv6 独立：前者控制流量，后者控制 DNS AAAA 响应。
+# 当前网络不需要 IPv6 时关闭，可以减少 IPv6 旁路和兼容性问题。
+ipv6: false
+
+# 可选：进程匹配模式。
+# - always：强制匹配所有进程；
+# - strict：由 Clash 自动判断，默认推荐；
+# - off：关闭进程匹配，路由器场景常用。
+# find-process-mode: strict
+
+# 可选：并发连接目标域名解析出的多个 IP，首次成功连接者获胜，通常能降低首连延迟，
+# 但会增加连接数和少量资源消耗。
+# tcp-concurrent: true
+
+# 可选：统一不同协议的延迟计算方式，使测速结果更容易比较；旧版内核不支持时删除。
+# unified-delay: true
+
+# 可选：移动设备 TCP 保活参数，单位秒；会增加少量后台流量和耗电。
+# keep-alive-interval: 15
+# keep-alive-idle: 15
+# disable-keep-alive: false
+
+# 可选：固定所有出站连接使用的网卡。多网卡、VPN、虚拟机环境可指定，如 en0。
+# interface-name: en0
+
+# 可选：Linux 出站路由标记，仅 Linux 有效；与部分 TUN route-address-set 方案冲突。
+# routing-mark: 6666
+
+# 仅监听本机控制器，避免外部设备访问 REST API。
+# 如需局域网访问，改为局域网 IP 或 0.0.0.0，并务必设置 secret。
+external-controller: 127.0.0.1:9090
+
+# 可选：REST API 访问密钥。控制器对外监听时应设置非空的随机长密码。
+# secret: "change-this-to-a-long-random-secret"
+
+# 可选：API 跨域配置。仅在网页面板跨域访问失败时配置，不建议放开所有来源。
+# external-controller-cors:
+#   allow-origins:
+#     - "https://your-dashboard.example"
+#   allow-private-network: true
+
+# 可选：外部面板目录和下载地址。使用相对路径时相对于 Clash 工作目录。
+# external-ui: ./dashboard
+# external-ui-name: dashboard
+# external-ui-url: https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip
+
+# 可选：保存代理组选择和 Fake-IP 映射。重启后保留上次选择，并减少域名重新映射。
+# profile:
+#   store-selected: true
+#   store-fake-ip: true
+
+# 订阅提供的节点应保留在这里。此处为空仅表示“由订阅填充”。
+proxies: []
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 二、代理组
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Proxy：手动选择组。组名大小写敏感，rules 中的 Proxy 必须完全一致。
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - Auto
+      - Proxy1
+      - Proxy2
+      - Proxy3
+      - DIRECT
+    # 可选：从 proxy-providers 引用节点，避免手写节点名称。
+    # use:
+    #   - my-provider
+    # 可选：隐藏该组，不在面板中显示，但仍可被规则引用。
+    # hidden: false
+
+  # Auto：自动测速组，从候选节点中选择延迟较低且可用的节点。
+  - name: Auto
+    type: url-test
+    # 探测节点可用性和延迟的地址，应选择稳定、响应快的 204 地址。
+    url: http://www.gstatic.com/generate_204
+    # 测速间隔，单位秒；越小越及时，但测速请求更多。
+    interval: 300
+    # 延迟差小于 50 ms 时不切换，减少频繁跳转。
+    tolerance: 50
+    proxies:
+      - Proxy1
+      - Proxy2
+      - Proxy3
+    # 可选：延迟组首次使用时才测速，节点较多时可减少启动请求。
+    # lazy: true
+    # 可选：单次测速超时时间，单位毫秒。
+    # timeout: 5000
+    # 可选：连续失败多少次后暂时移除节点。
+    # max-failed-times: 3
+    # 可选：禁止该组转发 UDP，仅保留 TCP。
+    # disable-udp: false
+
+# 代理组类型说明：
+# - select：手动选择，最可控；
+# - url-test：按 URL 测速自动选择；
+# - fallback：按顺序选择第一个可用节点，稳定性优先；
+# - load-balance：在多个节点间负载均衡，可配 consistent-hashing 或 round-robin；
+# - relay：按 proxies 顺序串联多个代理，适合特殊链式场景，但延迟和故障点更多。
+#
+# 可选的节点筛选字段（适用于支持这些字段的 mihomo 版本）：
+# filter: "日本|JP"
+# exclude-filter: "过期|测试"
+# include-all: true
+# include-all-proxies: true
+# include-all-providers: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 三、DNS
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 启用内置 DNS。关闭后使用系统 DNS，Fake-IP、DNS 分流和 DNS 劫持将无法按此配置工作。
+dns:
+  enable: true
+  # 可选缓存算法：lru（常规，默认）或 arc（自适应缓存，可能占用更多内存）。
+  # cache-algorithm: lru
+  # 可选：优先使用 DoH 的 HTTP/3；服务端不支持时不要开启。
+  # prefer-h3: false
+
+  # 是否解析 IPv6 地址。关闭后 AAAA 查询返回空结果；需要同时考虑顶层 ipv6 设置。
+  ipv6: false
+
+  # 可选：让其他设备直接访问 Clash DNS。只有需要局域网 DNS 服务时启用，并注意端口暴露。
+  # listen: 0.0.0.0:1053
+
+  # DNS 处理模式：
+  # - fake-ip：返回虚拟 IP，通常更方便按域名规则分流；
+  # - redir-host：返回真实 IP，某些应用兼容性更直观，但域名规则场景可能更复杂。
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  # 可选 IPv6 Fake-IP 网段，需要同时开启顶层 ipv6 和 dns.ipv6。
+  # fake-ip-range6: fdfe:dcba:9876::1/64
+
+  # Fake-IP 排除模式：
+  # - blacklist：列表中的域名不分配 Fake-IP，默认推荐；
+  # - whitelist：只有列表中的域名分配 Fake-IP；
+  # - rule：按路由规则决定 fake-ip / real-ip，适合高级分流。
+  # fake-ip-filter-mode: blacklist
+
+  # 启动时用于解析 DoH 域名的 DNS，必须填写 IP 地址或可用的加密 DNS。
+  default-nameserver:
+    - 8.8.8.8
+    - 1.1.1.1
+
+  # 不返回 Fake-IP 的域名。局域网、系统服务和部分兼容性较差的应用通常应加入这里。
+  fake-ip-filter:
+    - '*.lan'
+    - localhost
+    - '*.local'
+    # 可按需加入：
+    # - '*.home.arpa'
+
+  # 是否读取 Clash hosts 和系统 hosts；通常保持默认 true。
+  # use-hosts: true
+  # use-system-hosts: true
+
+  # 主 DNS：优先使用加密 DNS。
+  nameserver:
+    - https://doh.pub/dns-query
+    - https://1.0.0.1/dns-query
+
+  # 主 DNS 不可用时的备用 DNS。配置 fallback 后，建议同时配置 fallback-filter。
+  fallback:
+    - tcp://9.9.9.9:53
+
+  # 可选：按域名或 geosite 指定解析服务器，优先级高于 nameserver / fallback。
+  # nameserver-policy:
+  #   "geosite:cn":
+  #     - https://doh.pub/dns-query
+  #   "+.example.com":
+  #     - 192.168.1.1
+
+  # 可选：仅用于解析代理节点域名，避免“先解析代理节点、再通过代理解析 DNS”的循环。
+  # proxy-server-nameserver:
+  #   - https://doh.pub/dns-query
+
+  # 可选：直连出口使用的 DNS；system 表示跟随系统 DNS。
+  # direct-nameserver:
+  #   - system
+  # direct-nameserver-follow-policy: false
+
+  # 可选：fallback 结果筛选。geoip-code 通常为 CN；匹配的域名优先走 fallback。
+  # fallback-filter:
+  #   geoip: true
+  #   geoip-code: CN
+  #   domain:
+  #     - "+.google.com"
+  #     - "+.youtube.com"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 四、TUN
+# ─────────────────────────────────────────────────────────────────────────────
+
+# TUN 模式：接管未显式设置系统代理的流量，适合桌面全局代理。
+tun:
+  enable: true
+  # 协议栈：
+  # - system：系统协议栈，通常更稳定、资源占用较低；
+  # - gvisor：用户态协议栈，隔离性较强；
+  # - mixed：TCP 使用 system、UDP 使用 gvisor，常见折中方案；
+  # - mips：mihomo 自带协议栈。
+  # 开启系统防火墙时，system / mixed 需要额外测试。
+  stack: system
+  # 多网卡时可改为具体网卡名；不填则自动探测出站网卡。
+  auto-detect-interface: true
+  # 自动写入系统默认路由，让系统流量进入 TUN。
+  auto-route: true
+  # 可选：Linux 自动配置 iptables/nftables，仅 Linux 有效，依赖 auto-route。
+  # auto-redirect: true
+  # 可选：严格路由可减少 DNS 泄漏，但可能影响 VirtualBox 等虚拟网络。
+  # strict-route: true
+  # 可选：指定 TUN 设备名；macOS 通常使用 utun 开头的名称。
+  # device: utun
+  # 可选 MTU。普通用户保持默认；极端网络或吞吐问题再调整。
+  # mtu: 9000
+
+  # 将 DNS 请求转交给 Clash DNS 模块；无协议前缀时默认按 UDP 处理。
+  dns-hijack:
+    - any:53
+
+  # 可选：排除不应进入 TUN 的网段，例如局域网、Docker、虚拟机网段。
+  # route-exclude-address:
+  #   - 192.168.0.0/16
+  #   - 10.0.0.0/8
+  #   - 172.16.0.0/12
+
+  # 可选：只让指定网卡进入 TUN。include-interface 与 exclude-interface 不能同时配置。
+  # include-interface:
+  #   - en0
+  # exclude-interface:
+  #   - utun0
+
+  # 可选：UDP NAT 映射超时时间，单位秒，默认约 300 秒。
+  # udp-timeout: 300
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 五、规则
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 规则从上到下匹配，第一条命中后停止。
+# GEOIP,Private,DIRECT：私有地址直连；不同内核对 Private 内置集合的支持可能不同。
+# MATCH,Proxy：兜底规则，必须放在最后；Proxy 必须与 proxy-groups 的 name 完全一致。
+rules:
+  - GEOIP,Private,DIRECT
+  - MATCH,Proxy
